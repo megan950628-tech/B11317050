@@ -14,6 +14,8 @@ fake_user_db = {
 SECRET_KEY = "super-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# [白板要求] 新增 Refresh Token 過期時間
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 oauth2_schema = OAuth2PasswordBearer(tokenUrl = "login")
 
@@ -22,6 +24,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
+    encode_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
+    return encode_jwt
+
+# [白板要求] 新增 Refresh Token 定義
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    to_encode.update({"exp": expire, "type": "refresh"})
     encode_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
     return encode_jwt
 
@@ -43,13 +53,21 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), response: Response =
         raise HTTPException(status_code=400, detail = "Invalid credentials")
     
     access_token = create_access_token({"sub": user["username"]})
+    # [白板要求] 產生 Refresh Token
+    refresh_token = create_refresh_token({"sub": user["username"]})
+
     response.set_cookie(
         key="jwt",
         value=access_token,
         httponly=True,
         samesite = "lax"
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    # [白板要求] 回傳時包含 Refresh Token
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token, 
+        "token_type": "bearer"
+    }
 
 @app.get("/user/me")
 def me(
